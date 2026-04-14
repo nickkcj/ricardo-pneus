@@ -12,6 +12,23 @@ dist
 dist-ssr
 *.local
 
+# Backend
+backend/venv/
+backend/dist/
+backend/build/
+backend/*.spec
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/models/__pycache__/
+backend/app/routes/__pycache__/
+
+# Data
+data/*.db
+data/*.json
+
+# Tauri sidecars (binários gerados)
+src-tauri/binaries/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

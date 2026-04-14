@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ricardo-pneus-app",
+  "productName": "Ricardo Pneus",
   "version": "0.1.0",
-  "identifier": "com.nicholasjasper.ricardo-pneus-app",
+  "identifier": "com.nicholasjasper.ricardo-pneus",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "ricardo-pneus-app",
-        "width": 800,
-        "height": 600
+        "title": "Ricardo Pneus - Sistema de Gestão",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {
@@ -31,5 +33,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
   }
 }
