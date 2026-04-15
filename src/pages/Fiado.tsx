@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Plus,
   Search,
@@ -22,6 +22,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { PageLoader } from "@/components/PageLoader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface Cliente {
   id: number;
@@ -41,7 +43,9 @@ interface Divida {
 
 export default function FiadoPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
+  const firstLoad = useRef(true);
   const [expandido, setExpandido] = useState<number | null>(null);
   const [dividas, setDividas] = useState<Divida[]>([]);
 
@@ -62,6 +66,8 @@ export default function FiadoPage() {
     valor_total: 0,
   });
   const [pagamentoValor, setPagamentoValor] = useState(0);
+  const [confirmDeleteCliente, setConfirmDeleteCliente] = useState<number | null>(null);
+  const [confirmDeleteDivida, setConfirmDeleteDivida] = useState<number | null>(null);
 
   const carregarClientes = useCallback(async () => {
     try {
@@ -70,10 +76,17 @@ export default function FiadoPage() {
       setClientes(data);
     } catch {
       toast.error("Erro ao carregar clientes");
+    } finally {
+      setLoading(false);
     }
   }, [busca]);
 
   useEffect(() => {
+    if (firstLoad.current) {
+      firstLoad.current = false;
+      carregarClientes();
+      return;
+    }
     const timer = setTimeout(carregarClientes, 300);
     return () => clearTimeout(timer);
   }, [carregarClientes]);
@@ -135,7 +148,6 @@ export default function FiadoPage() {
   }
 
   async function deletarCliente(id: number) {
-    if (!confirm("Excluir este cliente e todas as suas dívidas?")) return;
     try {
       await api.delete(`/clientes/${id}`);
       toast.success("Cliente excluído");
@@ -169,7 +181,6 @@ export default function FiadoPage() {
   }
 
   async function deletarDivida(dividaId: number) {
-    if (!confirm("Excluir esta dívida?")) return;
     try {
       await api.delete(`/clientes/dividas/${dividaId}`);
       toast.success("Dívida excluída");
@@ -216,6 +227,8 @@ export default function FiadoPage() {
       { total: 0, pago: 0 }
     );
   }
+
+  if (loading) return <PageLoader />;
 
   return (
     <div className="space-y-6">
@@ -285,7 +298,7 @@ export default function FiadoPage() {
                     className="h-8 w-8 text-destructive"
                     onClick={(e) => {
                       e.stopPropagation();
-                      deletarCliente(c.id);
+                      setConfirmDeleteCliente(c.id);
                     }}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -369,7 +382,7 @@ export default function FiadoPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive"
-                              onClick={() => deletarDivida(d.id)}
+                              onClick={() => setConfirmDeleteDivida(d.id)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -507,6 +520,28 @@ export default function FiadoPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDeleteCliente !== null}
+        onOpenChange={(open) => !open && setConfirmDeleteCliente(null)}
+        title="Excluir cliente"
+        description="Excluir este cliente e todas as suas dívidas?"
+        confirmLabel="Excluir"
+        onConfirm={() => {
+          if (confirmDeleteCliente) deletarCliente(confirmDeleteCliente);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteDivida !== null}
+        onOpenChange={(open) => !open && setConfirmDeleteDivida(null)}
+        title="Excluir dívida"
+        description="Tem certeza que deseja excluir esta dívida?"
+        confirmLabel="Excluir"
+        onConfirm={() => {
+          if (confirmDeleteDivida) deletarDivida(confirmDeleteDivida);
+        }}
+      />
     </div>
   );
 }

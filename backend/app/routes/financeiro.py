@@ -8,6 +8,7 @@ from app.models.financeiro import (
     MovimentacaoFinanceira,
     TipoFinanceiro,
 )
+from app.models.produto import Produto, MovimentacaoEstoque, TipoMovimentacao
 
 router = APIRouter(prefix="/api/financeiro", tags=["financeiro"])
 
@@ -17,6 +18,8 @@ class MovimentacaoCreate(BaseModel):
     categoria: str
     descricao: str
     valor: float
+    produto_id: int | None = None
+    quantidade: int | None = None
 
 
 class ResumoResponse(BaseModel):
@@ -81,7 +84,34 @@ def resumo_dia(
 
 @router.post("", status_code=201)
 def criar_movimentacao(data: MovimentacaoCreate, session: Session = Depends(get_session)):
-    mov = MovimentacaoFinanceira(**data.model_dump())
+    # Se é uma venda com produto, baixa o estoque
+    if data.produto_id and data.quantidade and data.categoria == "VENDA":
+        produto = session.get(Produto, data.produto_id)
+        if not produto:
+            raise HTTPException(status_code=404, detail="Produto não encontrado")
+        if produto.quantidade < data.quantidade:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Estoque insuficiente ({produto.quantidade} disponível)",
+            )
+        produto.quantidade -= data.quantidade
+        produto.updated_at = datetime.now()
+        session.add(produto)
+
+        mov_estoque = MovimentacaoEstoque(
+            produto_id=data.produto_id,
+            tipo=TipoMovimentacao.SAIDA,
+            quantidade=data.quantidade,
+            observacao=f"Venda registrada: {data.descricao}",
+        )
+        session.add(mov_estoque)
+
+    mov = MovimentacaoFinanceira(
+        tipo=data.tipo,
+        categoria=data.categoria,
+        descricao=data.descricao,
+        valor=data.valor,
+    )
     session.add(mov)
     session.commit()
     session.refresh(mov)

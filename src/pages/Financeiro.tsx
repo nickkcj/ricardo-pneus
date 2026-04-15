@@ -27,6 +27,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { PageLoader } from "@/components/PageLoader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ProductPicker } from "@/components/ProductPicker";
 
 interface Movimentacao {
   id: number;
@@ -41,6 +44,14 @@ interface Resumo {
   total_entradas: number;
   total_saidas: number;
   saldo: number;
+}
+
+interface Produto {
+  id: number;
+  nome: string;
+  categoria: string;
+  quantidade: number;
+  preco_venda: number;
 }
 
 const CATEGORIAS_ENTRADA = [
@@ -71,13 +82,18 @@ export default function FinanceiroPage() {
     total_saidas: 0,
     saldo: 0,
   });
+  const [loading, setLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState<string>("");
+  const [produtos, setProdutos] = useState<Produto[]>([]);
   const [form, setForm] = useState({
     tipo: "ENTRADA" as "ENTRADA" | "SAIDA",
     categoria: "VENDA",
     descricao: "",
     valor: 0,
+    produto_id: null as number | null,
+    quantidade: 1,
   });
 
   const carregar = useCallback(async () => {
@@ -93,6 +109,8 @@ export default function FinanceiroPage() {
       setResumo(res);
     } catch {
       toast.error("Erro ao carregar dados financeiros");
+    } finally {
+      setLoading(false);
     }
   }, [filtroTipo]);
 
@@ -100,9 +118,43 @@ export default function FinanceiroPage() {
     carregar();
   }, [carregar]);
 
-  function abrirNovo() {
-    setForm({ tipo: "ENTRADA", categoria: "VENDA", descricao: "", valor: 0 });
+  async function abrirNovo() {
+    setForm({
+      tipo: "ENTRADA",
+      categoria: "VENDA",
+      descricao: "",
+      valor: 0,
+      produto_id: null,
+      quantidade: 1,
+    });
+    try {
+      const prods = await api.get<Produto[]>("/produtos");
+      setProdutos(prods);
+    } catch {
+      setProdutos([]);
+    }
     setDialogOpen(true);
+  }
+
+  function selecionarProduto(produtoId: number) {
+    const produto = produtos.find((p) => p.id === produtoId);
+    if (!produto) return;
+    const qtd = form.quantidade || 1;
+    setForm({
+      ...form,
+      produto_id: produtoId,
+      descricao: produto.nome,
+      valor: produto.preco_venda * qtd,
+    });
+  }
+
+  function atualizarQuantidade(qtd: number) {
+    const produto = produtos.find((p) => p.id === form.produto_id);
+    setForm({
+      ...form,
+      quantidade: qtd,
+      valor: produto ? produto.preco_venda * qtd : form.valor,
+    });
   }
 
   async function salvar() {
@@ -111,7 +163,17 @@ export default function FinanceiroPage() {
       return;
     }
     try {
-      await api.post("/financeiro", form);
+      const payload: Record<string, unknown> = {
+        tipo: form.tipo,
+        categoria: form.categoria,
+        descricao: form.descricao,
+        valor: form.valor,
+      };
+      if (form.categoria === "VENDA" && form.produto_id) {
+        payload.produto_id = form.produto_id;
+        payload.quantidade = form.quantidade;
+      }
+      await api.post("/financeiro", payload);
       toast.success("Movimentação registrada");
       setDialogOpen(false);
       carregar();
@@ -121,7 +183,6 @@ export default function FinanceiroPage() {
   }
 
   async function deletar(id: number) {
-    if (!confirm("Excluir esta movimentação?")) return;
     try {
       await api.delete(`/financeiro/${id}`);
       toast.success("Movimentação excluída");
@@ -133,6 +194,8 @@ export default function FinanceiroPage() {
 
   const categorias =
     form.tipo === "ENTRADA" ? CATEGORIAS_ENTRADA : CATEGORIAS_SAIDA;
+
+  if (loading) return <PageLoader />;
 
   return (
     <div className="space-y-6">
@@ -263,7 +326,7 @@ export default function FinanceiroPage() {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-destructive"
-                      onClick={() => deletar(m.id)}
+                      onClick={() => setConfirmDelete(m.id)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -295,6 +358,10 @@ export default function FinanceiroPage() {
                       v === "ENTRADA"
                         ? CATEGORIAS_ENTRADA[0].value
                         : CATEGORIAS_SAIDA[0].value,
+                    produto_id: null,
+                    quantidade: 1,
+                    descricao: "",
+                    valor: 0,
                   })
                 }
               >
@@ -311,7 +378,17 @@ export default function FinanceiroPage() {
               <Label>Categoria</Label>
               <Select
                 value={form.categoria}
-                onValueChange={(v) => v && setForm({ ...form, categoria: v })}
+                onValueChange={(v) =>
+                  v &&
+                  setForm({
+                    ...form,
+                    categoria: v,
+                    produto_id: null,
+                    quantidade: 1,
+                    descricao: "",
+                    valor: 0,
+                  })
+                }
               >
                 <SelectTrigger className="h-11">
                   <SelectValue />
@@ -325,6 +402,39 @@ export default function FinanceiroPage() {
                 </SelectContent>
               </Select>
             </div>
+            {form.categoria === "VENDA" && (
+              <>
+                <div>
+                  <Label>Produto</Label>
+                  <ProductPicker
+                    produtos={produtos}
+                    value={form.produto_id}
+                    onChange={(id) => {
+                      if (id) selecionarProduto(id);
+                      else setForm({ ...form, produto_id: null, descricao: "", valor: 0 });
+                    }}
+                  />
+                </div>
+                {form.produto_id && (
+                  <div>
+                    <Label>Quantidade</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={
+                        produtos.find((p) => p.id === form.produto_id)
+                          ?.quantidade ?? 999
+                      }
+                      value={form.quantidade}
+                      onChange={(e) =>
+                        atualizarQuantidade(parseInt(e.target.value) || 1)
+                      }
+                      className="h-11"
+                    />
+                  </div>
+                )}
+              </>
+            )}
             <div>
               <Label>Descrição</Label>
               <Textarea
@@ -357,6 +467,17 @@ export default function FinanceiroPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onOpenChange={(open) => !open && setConfirmDelete(null)}
+        title="Excluir movimentação"
+        description="Tem certeza que deseja excluir esta movimentação?"
+        confirmLabel="Excluir"
+        onConfirm={() => {
+          if (confirmDelete) deletar(confirmDelete);
+        }}
+      />
     </div>
   );
 }

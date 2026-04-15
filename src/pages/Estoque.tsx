@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Plus,
   Search,
@@ -26,6 +26,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { PageLoader } from "@/components/PageLoader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface Produto {
   id: number;
@@ -54,6 +56,13 @@ const SUBCATEGORIAS = [
   { value: "EMPILHADEIRA", label: "Empilhadeira" },
 ];
 
+const CAT_LABEL: Record<string, string> = Object.fromEntries(
+  CATEGORIAS.map((c) => [c.value, c.label])
+);
+const SUBCAT_LABEL: Record<string, string> = Object.fromEntries(
+  SUBCATEGORIAS.map((s) => [s.value, s.label])
+);
+
 const emptyForm = {
   nome: "",
   categoria: "PNEU",
@@ -66,11 +75,14 @@ const emptyForm = {
 
 export default function EstoquePage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const firstLoad = useRef(true);
 
   const carregarProdutos = useCallback(async () => {
     try {
@@ -84,10 +96,17 @@ export default function EstoquePage() {
       setProdutos(data);
     } catch {
       toast.error("Erro ao carregar produtos");
+    } finally {
+      setLoading(false);
     }
   }, [busca, filtroCategoria]);
 
   useEffect(() => {
+    if (firstLoad.current) {
+      firstLoad.current = false;
+      carregarProdutos();
+      return;
+    }
     const timer = setTimeout(carregarProdutos, 300);
     return () => clearTimeout(timer);
   }, [carregarProdutos]);
@@ -133,7 +152,6 @@ export default function EstoquePage() {
   }
 
   async function deletar(id: number) {
-    if (!confirm("Tem certeza que deseja excluir este produto?")) return;
     try {
       await api.delete(`/produtos/${id}`);
       toast.success("Produto excluído");
@@ -157,6 +175,8 @@ export default function EstoquePage() {
   }
 
   const estoqueAlerta = (p: Produto) => p.quantidade <= p.quantidade_minima;
+
+  if (loading) return <PageLoader />;
 
   return (
     <div className="space-y-6">
@@ -184,7 +204,9 @@ export default function EstoquePage() {
           onValueChange={(v) => setFiltroCategoria(!v || v === "TODAS" ? "" : v)}
         >
           <SelectTrigger className="w-48 h-12">
-            <SelectValue placeholder="Todas categorias" />
+            <SelectValue placeholder="Todas categorias">
+              {filtroCategoria ? CAT_LABEL[filtroCategoria] || filtroCategoria : undefined}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="TODAS">Todas</SelectItem>
@@ -280,7 +302,7 @@ export default function EstoquePage() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive"
-                        onClick={() => deletar(p.id)}
+                        onClick={() => setConfirmDelete(p.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -319,7 +341,9 @@ export default function EstoquePage() {
                   onValueChange={(v) => v && setForm({ ...form, categoria: v })}
                 >
                   <SelectTrigger className="h-11">
-                    <SelectValue />
+                    <SelectValue>
+                      {CAT_LABEL[form.categoria] || form.categoria}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {CATEGORIAS.map((c) => (
@@ -339,7 +363,9 @@ export default function EstoquePage() {
                   }
                 >
                   <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Nenhuma" />
+                    <SelectValue placeholder="Nenhuma">
+                      {form.subcategoria ? SUBCAT_LABEL[form.subcategoria] || form.subcategoria : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="NENHUMA">Nenhuma</SelectItem>
@@ -416,6 +442,17 @@ export default function EstoquePage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onOpenChange={(open) => !open && setConfirmDelete(null)}
+        title="Excluir produto"
+        description="Tem certeza que deseja excluir este produto?"
+        confirmLabel="Excluir"
+        onConfirm={() => {
+          if (confirmDelete) deletar(confirmDelete);
+        }}
+      />
     </div>
   );
 }

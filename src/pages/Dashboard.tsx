@@ -57,16 +57,17 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [fluxo, setFluxo] = useState<FluxoSemanal[]>([]);
+  const [periodoFluxo, setPeriodoFluxo] = useState(7);
 
   useEffect(() => {
-    Promise.all([
-      api.get<DashboardData>("/dashboard"),
-      api.get<FluxoSemanal[]>("/dashboard/fluxo-semanal"),
-    ]).then(([d, f]) => {
-      setData(d);
-      setFluxo(f);
-    });
+    api.get<DashboardData>("/dashboard").then(setData);
   }, []);
+
+  useEffect(() => {
+    api
+      .get<FluxoSemanal[]>(`/dashboard/fluxo-semanal?dias=${periodoFluxo}`)
+      .then(setFluxo);
+  }, [periodoFluxo]);
 
   if (!data) {
     return (
@@ -221,10 +222,27 @@ export default function DashboardPage() {
 
       {/* Gráfico de Fluxo de Caixa */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">
-            Fluxo de Caixa — Últimos 7 dias
-          </CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">Fluxo de Caixa</CardTitle>
+          <div className="flex gap-1">
+            {[
+              { label: "7D", value: 7 },
+              { label: "15D", value: 15 },
+              { label: "30D", value: 30 },
+            ].map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setPeriodoFluxo(p.value)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  periodoFluxo === p.value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={320}>
