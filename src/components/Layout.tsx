@@ -1,9 +1,10 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Package, DollarSign, Users, HardDrive } from "lucide-react";
+import { LayoutDashboard, Package, PackagePlus, DollarSign, Users, HardDrive } from "lucide-react";
 
 const navItems = [
   { to: "/dashboard", label: "Início", icon: LayoutDashboard },
   { to: "/estoque", label: "Estoque", icon: Package },
+  { to: "/reposicao", label: "Reposição", icon: PackagePlus },
   { to: "/financeiro", label: "Financeiro", icon: DollarSign },
   { to: "/fiado", label: "Fiado", icon: Users },
   { to: "/backup", label: "Backup", icon: HardDrive },
@@ -14,7 +15,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen">
       <aside className="w-56 bg-sidebar text-sidebar-foreground flex flex-col">
         <div className="p-4 border-b border-sidebar-border">
-          <h1 className="text-xl font-bold">Ricardo Pneus</h1>
+          <img
+            src="/logo-light.png"
+            alt="Ricardo Pneus Autocenter"
+            className="w-full h-auto dark:hidden"
+          />
+          <img
+            src="/logo-dark.png"
+            alt="Ricardo Pneus Autocenter"
+            className="w-full h-auto hidden dark:block"
+          />
         </div>
         <nav className="flex-1 p-2 space-y-1">
           {navItems.map((item) => (

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { Layout } from "@/components/Layout";
 import EstoquePage from "@/pages/Estoque";
+import ReposicaoPage from "@/pages/Reposicao";
 import FinanceiroPage from "@/pages/Financeiro";
 import FiadoPage from "@/pages/Fiado";
 import BackupPage from "@/pages/Backup";
@@ -15,6 +16,7 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/estoque" element={<EstoquePage />} />
+          <Route path="/reposicao" element={<ReposicaoPage />} />
           <Route path="/financeiro" element={<FinanceiroPage />} />
           <Route path="/fiado" element={<FiadoPage />} />
           <Route path="/backup" element={<BackupPage />} />

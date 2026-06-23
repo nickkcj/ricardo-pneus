@@ -21,7 +21,13 @@ app = FastAPI(title="Ricardo Pneus API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:1420", "http://127.0.0.1:1420", "tauri://localhost"],
+    allow_origins=[
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "tauri://localhost",          # macOS / Linux
+        "http://tauri.localhost",     # Windows (WebView2)
+        "https://tauri.localhost",    # Windows (WebView2)
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -36,3 +42,11 @@ app.include_router(dashboard_router)
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# Entrypoint para o binário do sidecar (PyInstaller).
+# Em dev, rode com: uvicorn main:app --port 8000
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")

@@ -5,6 +5,12 @@ from pydantic import BaseModel
 
 from app.database import get_session
 from app.models.cliente import Cliente, Divida, PagamentoDivida
+from app.models.financeiro import (
+    MovimentacaoFinanceira,
+    TipoFinanceiro,
+    CategoriaEntrada,
+)
+from app.models.produto import Produto, MovimentacaoEstoque, TipoMovimentacao
 
 router = APIRouter(prefix="/api/clientes", tags=["clientes"])
 
@@ -24,6 +30,8 @@ class ClienteUpdate(BaseModel):
 class DividaCreate(BaseModel):
     descricao: str
     valor_total: float
+    produto_id: int | None = None
+    quantidade: int | None = None
 
 
 class PagamentoCreate(BaseModel):
@@ -117,7 +125,34 @@ def criar_divida(
     cliente = session.get(Cliente, cliente_id)
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    divida = Divida(cliente_id=cliente_id, **data.model_dump())
+
+    # Venda fiado de item do estoque: baixa a quantidade e registra a movimentação
+    if data.produto_id and data.quantidade:
+        produto = session.get(Produto, data.produto_id)
+        if not produto:
+            raise HTTPException(status_code=404, detail="Produto não encontrado")
+        if produto.quantidade < data.quantidade:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Estoque insuficiente ({produto.quantidade} disponível)",
+            )
+        produto.quantidade -= data.quantidade
+        produto.updated_at = datetime.now()
+        session.add(produto)
+        session.add(
+            MovimentacaoEstoque(
+                produto_id=data.produto_id,
+                tipo=TipoMovimentacao.SAIDA,
+                quantidade=data.quantidade,
+                observacao=f"Venda fiado — {cliente.nome}: {data.descricao}",
+            )
+        )
+
+    divida = Divida(
+        cliente_id=cliente_id,
+        descricao=data.descricao,
+        valor_total=data.valor_total,
+    )
     session.add(divida)
     session.commit()
     session.refresh(divida)
@@ -164,6 +199,19 @@ def registrar_pagamento(
     divida.updated_at = datetime.now()
 
     pagamento = PagamentoDivida(divida_id=divida_id, valor=data.valor)
+
+    # Dinheiro recebido entra no caixa do dia
+    cliente = session.get(Cliente, divida.cliente_id)
+    nome_cliente = cliente.nome if cliente else "Cliente"
+    session.add(
+        MovimentacaoFinanceira(
+            tipo=TipoFinanceiro.ENTRADA,
+            categoria=CategoriaEntrada.RECEBIMENTO_DIVIDA.value,
+            descricao=f"Recebimento fiado — {nome_cliente}: {divida.descricao}",
+            valor=data.valor,
+        )
+    )
+
     session.add(divida)
     session.add(pagamento)
     session.commit()

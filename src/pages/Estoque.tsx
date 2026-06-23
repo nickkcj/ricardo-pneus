@@ -364,7 +364,9 @@ export default function EstoquePage() {
                 >
                   <SelectTrigger className="h-11">
                     <SelectValue placeholder="Nenhuma">
-                      {form.subcategoria ? SUBCAT_LABEL[form.subcategoria] || form.subcategoria : undefined}
+                      {form.subcategoria
+                        ? SUBCAT_LABEL[form.subcategoria] || form.subcategoria
+                        : "Nenhuma"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>

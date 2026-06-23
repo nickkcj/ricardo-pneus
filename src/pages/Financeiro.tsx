@@ -54,10 +54,11 @@ interface Produto {
   preco_venda: number;
 }
 
+// RECEBIMENTO_DIVIDA não é opção manual: é lançado automaticamente
+// pelo pagamento de dívida na tela de Fiado (LABELS_CATEGORIA ainda o exibe)
 const CATEGORIAS_ENTRADA = [
   { value: "VENDA", label: "Venda de Produto" },
   { value: "SERVICO", label: "Prestação de Serviço" },
-  { value: "RECEBIMENTO_DIVIDA", label: "Recebimento de Dívida" },
 ];
 
 const CATEGORIAS_SAIDA = [
@@ -261,7 +262,13 @@ export default function FinanceiroPage() {
           onValueChange={(v) => setFiltroTipo(v === "TODOS" ? "" : v ?? "")}
         >
           <SelectTrigger className="w-48 h-12">
-            <SelectValue placeholder="Todos" />
+            <SelectValue placeholder="Todos">
+              {filtroTipo === "ENTRADA"
+                ? "Entradas"
+                : filtroTipo === "SAIDA"
+                  ? "Saídas"
+                  : "Todos"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="TODOS">Todos</SelectItem>
@@ -366,7 +373,9 @@ export default function FinanceiroPage() {
                 }
               >
                 <SelectTrigger className="h-11">
-                  <SelectValue />
+                  <SelectValue>
+                    {form.tipo === "ENTRADA" ? "Entrada" : "Saída"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ENTRADA">Entrada</SelectItem>
@@ -391,7 +400,10 @@ export default function FinanceiroPage() {
                 }
               >
                 <SelectTrigger className="h-11">
-                  <SelectValue />
+                  <SelectValue>
+                    {categorias.find((c) => c.value === form.categoria)
+                      ?.label ?? form.categoria}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {categorias.map((c) => (

@@ -24,11 +24,20 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { PageLoader } from "@/components/PageLoader";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ProductPicker } from "@/components/ProductPicker";
 
 interface Cliente {
   id: number;
   nome: string;
   telefone: string | null;
+}
+
+interface Produto {
+  id: number;
+  nome: string;
+  categoria: string;
+  quantidade: number;
+  preco_venda: number;
 }
 
 interface Divida {
@@ -64,7 +73,11 @@ export default function FiadoPage() {
   const [dividaForm, setDividaForm] = useState({
     descricao: "",
     valor_total: 0,
+    produto_id: null as number | null,
+    quantidade: 1,
   });
+  const [usarEstoque, setUsarEstoque] = useState(false);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
   const [pagamentoValor, setPagamentoValor] = useState(0);
   const [confirmDeleteCliente, setConfirmDeleteCliente] = useState<number | null>(null);
   const [confirmDeleteDivida, setConfirmDeleteDivida] = useState<number | null>(null);
@@ -159,10 +172,42 @@ export default function FiadoPage() {
   }
 
   // --- Dívidas ---
-  function abrirNovaDivida(clienteId: number) {
+  async function abrirNovaDivida(clienteId: number) {
     setSelectedClienteId(clienteId);
-    setDividaForm({ descricao: "", valor_total: 0 });
+    setDividaForm({ descricao: "", valor_total: 0, produto_id: null, quantidade: 1 });
+    setUsarEstoque(false);
     setDividaDialogOpen(true);
+    try {
+      const prods = await api.get<Produto[]>("/produtos");
+      setProdutos(prods);
+    } catch {
+      setProdutos([]);
+    }
+  }
+
+  function selecionarProduto(produtoId: number | null) {
+    if (produtoId === null) {
+      setDividaForm({ ...dividaForm, produto_id: null });
+      return;
+    }
+    const produto = produtos.find((p) => p.id === produtoId);
+    if (!produto) return;
+    const qtd = dividaForm.quantidade || 1;
+    setDividaForm({
+      ...dividaForm,
+      produto_id: produtoId,
+      descricao: produto.nome,
+      valor_total: produto.preco_venda * qtd,
+    });
+  }
+
+  function atualizarQuantidade(qtd: number) {
+    const produto = produtos.find((p) => p.id === dividaForm.produto_id);
+    setDividaForm({
+      ...dividaForm,
+      quantidade: qtd,
+      valor_total: produto ? produto.preco_venda * qtd : dividaForm.valor_total,
+    });
   }
 
   async function salvarDivida() {
@@ -171,7 +216,15 @@ export default function FiadoPage() {
       return;
     }
     try {
-      await api.post(`/clientes/${selectedClienteId}/dividas`, dividaForm);
+      const payload: Record<string, unknown> = {
+        descricao: dividaForm.descricao,
+        valor_total: dividaForm.valor_total,
+      };
+      if (usarEstoque && dividaForm.produto_id) {
+        payload.produto_id = dividaForm.produto_id;
+        payload.quantidade = dividaForm.quantidade;
+      }
+      await api.post(`/clientes/${selectedClienteId}/dividas`, payload);
       toast.success("Dívida registrada");
       setDividaDialogOpen(false);
       if (selectedClienteId) carregarDividas(selectedClienteId);
@@ -195,18 +248,19 @@ export default function FiadoPage() {
     setSelectedDividaId(divida.id);
     const restante = divida.valor_total - divida.valor_pago;
     setSelectedDividaRestante(restante);
-    setPagamentoValor(restante);
+    setPagamentoValor(0);
     setPagamentoDialogOpen(true);
   }
 
-  async function registrarPagamento() {
-    if (pagamentoValor <= 0) {
+  async function registrarPagamento(valor?: number) {
+    const valorFinal = valor ?? pagamentoValor;
+    if (valorFinal <= 0) {
       toast.error("Informe um valor");
       return;
     }
     try {
       await api.post(`/clientes/dividas/${selectedDividaId}/pagamento`, {
-        valor: pagamentoValor,
+        valor: valorFinal,
       });
       toast.success("Pagamento registrado");
       setPagamentoDialogOpen(false);
@@ -443,6 +497,52 @@ export default function FiadoPage() {
             <DialogTitle>Nova Dívida</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={usarEstoque}
+                onChange={(e) => {
+                  setUsarEstoque(e.target.checked);
+                  if (!e.target.checked) {
+                    setDividaForm({ ...dividaForm, produto_id: null });
+                  }
+                }}
+                className="h-4 w-4 accent-primary"
+              />
+              <span className="text-sm font-medium">Item do estoque?</span>
+            </label>
+
+            {usarEstoque && (
+              <div className="space-y-4 rounded-lg border bg-muted/20 p-3">
+                <div>
+                  <Label>Produto</Label>
+                  <ProductPicker
+                    produtos={produtos}
+                    value={dividaForm.produto_id}
+                    onChange={selecionarProduto}
+                  />
+                </div>
+                {dividaForm.produto_id && (
+                  <div>
+                    <Label>Quantidade</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={
+                        produtos.find((p) => p.id === dividaForm.produto_id)
+                          ?.quantidade ?? 999
+                      }
+                      value={dividaForm.quantidade}
+                      onChange={(e) =>
+                        atualizarQuantidade(parseInt(e.target.value) || 1)
+                      }
+                      className="h-11"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <Label>Descrição</Label>
               <Textarea
@@ -505,12 +605,12 @@ export default function FiadoPage() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => setPagamentoValor(selectedDividaRestante)}
+                onClick={() => registrarPagamento(selectedDividaRestante)}
               >
                 Quitar Total
               </Button>
               <Button
-                onClick={registrarPagamento}
+                onClick={() => registrarPagamento()}
                 size="lg"
                 className="flex-1"
               >
