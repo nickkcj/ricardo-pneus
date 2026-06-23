@@ -7,6 +7,7 @@ import FinanceiroPage from "@/pages/Financeiro";
 import FiadoPage from "@/pages/Fiado";
 import BackupPage from "@/pages/Backup";
 import DashboardPage from "@/pages/Dashboard";
+import RelatoriosPage from "@/pages/Relatorios";
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Route path="/reposicao" element={<ReposicaoPage />} />
           <Route path="/financeiro" element={<FinanceiroPage />} />
           <Route path="/fiado" element={<FiadoPage />} />
+          <Route path="/relatorios" element={<RelatoriosPage />} />
           <Route path="/backup" element={<BackupPage />} />
         </Routes>
       </Layout>

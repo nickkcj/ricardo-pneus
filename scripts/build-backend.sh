@@ -28,6 +28,7 @@ pyinstaller --onefile --name backend-api \
     --hidden-import app.routes.clientes \
     --hidden-import app.routes.backup \
     --hidden-import app.routes.dashboard \
+    --hidden-import app.routes.relatorios \
     main.py
 
 # Detectar a triple do sistema para o nome do sidecar do Tauri

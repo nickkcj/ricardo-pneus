@@ -9,6 +9,7 @@ from app.routes.financeiro import router as financeiro_router
 from app.routes.clientes import router as clientes_router
 from app.routes.backup import router as backup_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.relatorios import router as relatorios_router
 
 
 @asynccontextmanager
@@ -37,6 +38,7 @@ app.include_router(financeiro_router)
 app.include_router(clientes_router)
 app.include_router(backup_router)
 app.include_router(dashboard_router)
+app.include_router(relatorios_router)
 
 
 @app.get("/api/health")
