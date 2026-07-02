@@ -31,3 +31,13 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-autostart = "2"
 
+# Profile de release otimizado para TEMPO DE COMPILAÇÃO no CI (não para performance
+# máxima do binário). Para este app de desktop a diferença de runtime é irrelevante,
+# mas o build fica bem mais rápido no GitHub Actions (Windows).
+[profile.release]
+opt-level = 1
+lto = false
+codegen-units = 16
+incremental = false
+strip = true
+
