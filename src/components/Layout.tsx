@@ -1,10 +1,9 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Package, PackagePlus, DollarSign, Users, HardDrive, FileBarChart } from "lucide-react";
+import { LayoutDashboard, Package, DollarSign, Users, HardDrive, FileBarChart } from "lucide-react";
 
 const navItems = [
   { to: "/dashboard", label: "Início", icon: LayoutDashboard },
   { to: "/estoque", label: "Estoque", icon: Package },
-  { to: "/reposicao", label: "Reposição", icon: PackagePlus },
   { to: "/financeiro", label: "Financeiro", icon: DollarSign },
   { to: "/fiado", label: "Fiado", icon: Users },
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart },

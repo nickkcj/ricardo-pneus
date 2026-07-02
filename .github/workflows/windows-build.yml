@@ -1,9 +1,16 @@
-name: Build Windows Installer
+name: Build & Release Windows
 
 on:
+  # Publica uma Release (com auto-update) ao empurrar uma tag de versão, ex: v0.1.1
   push:
-    branches: [main]
+    tags:
+      - "v*"
+  # Permite build manual (só gera artifact, sem publicar Release)
   workflow_dispatch: {}
+
+# Necessário para o tauri-action criar a GitHub Release
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -43,10 +50,28 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build Tauri (.msi / .exe)
+      # Publica a Release com instaladores + latest.json ASSINADO (para o auto-update).
+      # Só roda quando o gatilho é uma tag (push de tag). Em workflow_dispatch é pulado.
+      - name: Build & Release (Tauri)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ricardo Pneus ${{ github.ref_name }}"
+          releaseDraft: false
+          prerelease: false
+
+      # Build manual (workflow_dispatch): apenas gera o instalador como artifact.
+      - name: Build Tauri (manual, sem release)
+        if: github.event_name == 'workflow_dispatch'
         run: pnpm tauri build
 
-      - name: Upload installer
+      - name: Upload installer (manual)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: ricardo-pneus-windows-installer
