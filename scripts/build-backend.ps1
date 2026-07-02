@@ -29,6 +29,7 @@ pip install pyinstaller -q
 # Gera o binário onefile
 pyinstaller --onefile --name backend-api `
     --add-data "app;app" `
+    --collect-all reportlab `
     --hidden-import app.models.produto `
     --hidden-import app.models.financeiro `
     --hidden-import app.models.cliente `

@@ -1,11 +1,21 @@
-import csv
-import io
 from datetime import datetime, date, time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select, col, func
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Table,
+    TableStyle,
+    Paragraph,
+    Spacer,
+)
 
 from app.database import get_session
 from app.models.produto import Produto
@@ -23,6 +33,15 @@ CATEGORIA_LABELS = {
     "VALVULA": "Válvulas",
 }
 
+CATEGORIA_FIN_LABELS = {
+    "VENDA": "Vendas",
+    "SERVICO": "Serviços",
+    "RECEBIMENTO_DIVIDA": "Recebimento de fiado",
+    "FORNECEDOR": "Fornecedores",
+    "CONTA_FIXA": "Contas fixas",
+    "DESPESA_OPERACIONAL": "Despesas operacionais",
+}
+
 
 # ----------------------------- helpers -----------------------------
 
@@ -37,8 +56,11 @@ def _intervalo(inicio: str | None, fim: str | None) -> tuple[datetime, datetime,
 
 
 def _moeda(valor: float) -> str:
-    """Formata número no padrão brasileiro para abrir no Excel (vírgula decimal)."""
-    return f"{valor:.2f}".replace(".", ",")
+    """Formata no padrão brasileiro: R$ 1.234,56."""
+    inteiro = f"{valor:,.2f}"  # ex: 1,234.56
+    # Troca separadores en-US -> pt-BR
+    inteiro = inteiro.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {inteiro}"
 
 
 # ----------------------------- coleta de dados -----------------------------
@@ -173,8 +195,39 @@ class ExportarRequest(BaseModel):
     fim: str | None = None
 
 
+# Cores da identidade do relatório
+_COR_HEADER = colors.HexColor("#111827")
+_COR_ZEBRA = colors.HexColor("#f9fafb")
+_COR_GRID = colors.HexColor("#d1d5db")
+_COR_SUB = colors.HexColor("#1f2937")
+
+
+def _tabela(header: list[str], linhas: list[list], larguras: list[float],
+            alinhar_dir: list[int] | None = None) -> Table:
+    """Monta uma tabela estilizada (cabeçalho escuro, zebra, grade)."""
+    alinhar_dir = alinhar_dir or []
+    t = Table([header, *linhas], colWidths=larguras, repeatRows=1)
+    estilo = [
+        ("BACKGROUND", (0, 0), (-1, 0), _COR_HEADER),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, _COR_GRID),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, _COR_ZEBRA]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for c in alinhar_dir:
+        estilo.append(("ALIGN", (c, 0), (c, -1), "RIGHT"))
+    t.setStyle(TableStyle(estilo))
+    return t
+
+
 @router.post("/exportar")
-def exportar_csv(req: ExportarRequest, session: Session = Depends(get_session)):
+def exportar_pdf(req: ExportarRequest, session: Session = Depends(get_session)):
     pasta = Path(req.pasta_destino)
     if not pasta.exists():
         raise HTTPException(status_code=400, detail=f"Pasta não encontrada: {pasta}")
@@ -184,77 +237,100 @@ def exportar_csv(req: ExportarRequest, session: Session = Depends(get_session)):
     produtos = dados.pop("_produtos")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     periodo_str = f"{di.strftime('%d/%m/%Y')} a {df.strftime('%d/%m/%Y')}"
-    gerados = []
+    caminho = pasta / f"relatorio_{ts}.pdf"
 
-    def _escrever(nome: str, montar) -> None:
-        buf = io.StringIO()
-        montar(csv.writer(buf, delimiter=";", lineterminator="\n"))
-        caminho = pasta / nome
-        # BOM para o Excel reconhecer UTF-8 e exibir acentos corretamente
-        caminho.write_text("﻿" + buf.getvalue(), encoding="utf-8")
-        gerados.append(str(caminho))
+    styles = getSampleStyleSheet()
+    st_titulo = ParagraphStyle("titulo", parent=styles["Title"], fontSize=18, spaceAfter=2)
+    st_sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9,
+                            textColor=colors.grey, spaceAfter=14)
+    st_secao = ParagraphStyle("secao", parent=styles["Heading2"], fontSize=13,
+                              textColor=_COR_SUB, spaceBefore=16, spaceAfter=6)
+    st_celula = ParagraphStyle("celula", parent=styles["Normal"], fontSize=8, leading=10)
 
-    # 1. Resumo (visão geral)
-    def _resumo(w):
-        e, f, fi = dados["estoque"], dados["faturamento"], dados["fiado"]
-        w.writerow(["Relatório Geral - Ricardo Pneus"])
-        w.writerow(["Período", periodo_str])
-        w.writerow([])
-        w.writerow(["ESTOQUE"])
-        w.writerow(["Produtos cadastrados", e["total_produtos"]])
-        w.writerow(["Quantidade total em estoque", e["quantidade_total"]])
-        w.writerow(["Valor do estoque (custo)", _moeda(e["valor_custo"])])
-        w.writerow(["Valor do estoque (venda)", _moeda(e["valor_venda"])])
-        w.writerow(["Itens em alerta de reposição", e["itens_em_alerta"]])
-        w.writerow([])
-        w.writerow(["FATURAMENTO (período)"])
-        w.writerow(["Entradas", _moeda(f["entradas"])])
-        w.writerow(["Saídas", _moeda(f["saidas"])])
-        w.writerow(["Saldo", _moeda(f["saldo"])])
-        w.writerow([])
-        w.writerow(["FIADO"])
-        w.writerow(["Clientes", fi["total_clientes"]])
-        w.writerow(["Dívidas pendentes", fi["dividas_pendentes"]])
-        w.writerow(["Valor a receber", _moeda(fi["valor_pendente"])])
+    e, f, fi = dados["estoque"], dados["faturamento"], dados["fiado"]
 
-    # 2. Estoque detalhado
-    def _estoque(w):
-        w.writerow(["Nome", "Categoria", "Subcategoria", "Quantidade",
-                    "Qtd. mínima", "Preço compra", "Preço venda", "Valor total (venda)"])
-        for p in sorted(produtos, key=lambda x: x.nome.lower()):
-            w.writerow([
-                p.nome,
-                CATEGORIA_LABELS.get(p.categoria, p.categoria),
-                p.subcategoria or "",
-                p.quantidade,
-                p.quantidade_minima,
-                _moeda(p.preco_compra),
-                _moeda(p.preco_venda),
-                _moeda(p.quantidade * p.preco_venda),
-            ])
+    story: list = [
+        Paragraph("Relatório Geral — Ricardo Pneus", st_titulo),
+        Paragraph(
+            f"Período: {periodo_str} &nbsp;•&nbsp; "
+            f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            st_sub,
+        ),
+    ]
 
-    # 3. Faturamento detalhado (movimentações do período)
-    def _faturamento(w):
-        movs = session.exec(
-            select(MovimentacaoFinanceira)
-            .where(
-                col(MovimentacaoFinanceira.created_at) >= inicio_dt,
-                col(MovimentacaoFinanceira.created_at) <= fim_dt,
-            )
-            .order_by(col(MovimentacaoFinanceira.created_at))
-        ).all()
-        w.writerow(["Data", "Tipo", "Categoria", "Descrição", "Valor"])
-        for m in movs:
-            w.writerow([
-                m.created_at.strftime("%d/%m/%Y %H:%M"),
-                "Entrada" if m.tipo == TipoFinanceiro.ENTRADA else "Saída",
-                m.categoria,
-                m.descricao,
-                _moeda(m.valor),
-            ])
+    # ---------------- Resumo ----------------
+    story.append(Paragraph("Resumo", st_secao))
+    resumo = [
+        ["Estoque — produtos cadastrados", str(e["total_produtos"])],
+        ["Estoque — quantidade total", str(e["quantidade_total"])],
+        ["Estoque — valor (custo)", _moeda(e["valor_custo"])],
+        ["Estoque — valor (venda)", _moeda(e["valor_venda"])],
+        ["Estoque — itens em alerta", str(e["itens_em_alerta"])],
+        ["Faturamento — entradas", _moeda(f["entradas"])],
+        ["Faturamento — saídas", _moeda(f["saidas"])],
+        ["Faturamento — saldo", _moeda(f["saldo"])],
+        ["Fiado — clientes", str(fi["total_clientes"])],
+        ["Fiado — dívidas pendentes", str(fi["dividas_pendentes"])],
+        ["Fiado — valor a receber", _moeda(fi["valor_pendente"])],
+    ]
+    story.append(_tabela(["Indicador", "Valor"], resumo, [120 * mm, 60 * mm], alinhar_dir=[1]))
 
-    _escrever(f"resumo_{ts}.csv", _resumo)
-    _escrever(f"estoque_{ts}.csv", _estoque)
-    _escrever(f"faturamento_{ts}.csv", _faturamento)
+    # ---------------- Estoque por categoria ----------------
+    story.append(Paragraph("Estoque por Categoria", st_secao))
+    cat_linhas = [
+        [c["categoria"], str(c["itens"]), str(c["quantidade"]),
+         _moeda(c["valor_custo"]), _moeda(c["valor_venda"])]
+        for c in e["por_categoria"]
+    ] or [["Nenhum produto cadastrado", "", "", "", ""]]
+    story.append(_tabela(
+        ["Categoria", "Itens", "Qtd", "Valor (custo)", "Valor (venda)"],
+        cat_linhas, [50 * mm, 22 * mm, 22 * mm, 43 * mm, 43 * mm], alinhar_dir=[1, 2, 3, 4],
+    ))
 
-    return {"ok": True, "arquivos": gerados, "pasta": str(pasta)}
+    # ---------------- Estoque detalhado ----------------
+    story.append(Paragraph("Estoque Detalhado", st_secao))
+    est_linhas = [
+        [Paragraph(p.nome, st_celula), CATEGORIA_LABELS.get(p.categoria, p.categoria),
+         p.subcategoria or "", str(p.quantidade), str(p.quantidade_minima),
+         _moeda(p.preco_compra), _moeda(p.preco_venda), _moeda(p.quantidade * p.preco_venda)]
+        for p in sorted(produtos, key=lambda x: x.nome.lower())
+    ] or [["Nenhum produto cadastrado", "", "", "", "", "", "", ""]]
+    story.append(_tabela(
+        ["Nome", "Categoria", "Subcat.", "Qtd", "Qtd mín.",
+         "Compra", "Venda", "Total (venda)"],
+        est_linhas,
+        [40 * mm, 22 * mm, 20 * mm, 12 * mm, 15 * mm, 22 * mm, 22 * mm, 27 * mm],
+        alinhar_dir=[3, 4, 5, 6, 7],
+    ))
+
+    # ---------------- Faturamento detalhado ----------------
+    story.append(Paragraph("Faturamento Detalhado", st_secao))
+    movs = session.exec(
+        select(MovimentacaoFinanceira)
+        .where(
+            col(MovimentacaoFinanceira.created_at) >= inicio_dt,
+            col(MovimentacaoFinanceira.created_at) <= fim_dt,
+        )
+        .order_by(col(MovimentacaoFinanceira.created_at))
+    ).all()
+    fat_linhas = [
+        [m.created_at.strftime("%d/%m/%Y %H:%M"),
+         "Entrada" if m.tipo == TipoFinanceiro.ENTRADA else "Saída",
+         CATEGORIA_FIN_LABELS.get(m.categoria, m.categoria),
+         Paragraph(m.descricao or "", st_celula), _moeda(m.valor)]
+        for m in movs
+    ] or [["Sem movimentações no período", "", "", "", ""]]
+    story.append(_tabela(
+        ["Data", "Tipo", "Categoria", "Descrição", "Valor"],
+        fat_linhas, [30 * mm, 18 * mm, 38 * mm, 64 * mm, 30 * mm], alinhar_dir=[4],
+    ))
+
+    doc = SimpleDocTemplate(
+        str(caminho), pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=15 * mm, bottomMargin=15 * mm,
+        title="Relatório Geral - Ricardo Pneus", author="Ricardo Pneus",
+    )
+    doc.build(story)
+
+    return {"ok": True, "arquivos": [str(caminho)], "pasta": str(pasta)}

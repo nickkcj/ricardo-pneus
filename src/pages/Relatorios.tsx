@@ -111,7 +111,7 @@ export default function RelatoriosPage() {
     const pasta = await open({
       directory: true,
       multiple: false,
-      title: "Escolha a pasta para salvar os relatórios",
+      title: "Escolha a pasta para salvar o relatório",
     });
     if (!pasta) return;
 
@@ -121,9 +121,7 @@ export default function RelatoriosPage() {
         "/relatorios/exportar",
         { pasta_destino: pasta, inicio, fim }
       );
-      toast.success(
-        `${res.arquivos.length} arquivos exportados em ${res.pasta}`
-      );
+      toast.success(`Relatório PDF salvo em ${res.pasta}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
@@ -174,7 +172,7 @@ export default function RelatoriosPage() {
               ) : (
                 <Download className="h-5 w-5" />
               )}
-              Exportar CSV
+              Exportar PDF
             </Button>
           </div>
         </CardContent>

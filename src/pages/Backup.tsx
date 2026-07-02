@@ -5,6 +5,7 @@ import {
   Download,
   RefreshCw,
   Check,
+  ArrowUpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { api } from "@/lib/api";
+import { checkForUpdates } from "@/lib/updater";
 
 interface BackupInfo {
   arquivo: string;
@@ -26,11 +29,23 @@ export default function BackupPage() {
   const [pastaSalva, setPastaSalva] = useState("");
   const [historico, setHistorico] = useState<BackupInfo[]>([]);
   const [executando, setExecutando] = useState(false);
+  const [versao, setVersao] = useState("");
+  const [verificandoUpdate, setVerificandoUpdate] = useState(false);
 
   useEffect(() => {
     carregarConfig();
     carregarHistorico();
+    getVersion().then(setVersao).catch(() => {});
   }, []);
+
+  async function verificarAtualizacoes() {
+    setVerificandoUpdate(true);
+    try {
+      await checkForUpdates({ silent: false });
+    } finally {
+      setVerificandoUpdate(false);
+    }
+  }
 
   async function carregarConfig() {
     try {
@@ -173,6 +188,31 @@ export default function BackupPage() {
               Configure a pasta de destino primeiro.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Atualizações */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <ArrowUpCircle className="h-5 w-5" />
+            Atualizações
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Versão instalada: <span className="font-medium text-foreground">{versao || "—"}</span>
+          </p>
+          <Button
+            onClick={verificarAtualizacoes}
+            size="lg"
+            variant="outline"
+            className="gap-2"
+            disabled={verificandoUpdate}
+          >
+            <RefreshCw className={`h-5 w-5 ${verificandoUpdate ? "animate-spin" : ""}`} />
+            {verificandoUpdate ? "Verificando..." : "Verificar atualizações"}
+          </Button>
         </CardContent>
       </Card>
 
