@@ -1,19 +1,42 @@
 name: Build & Release Windows
 
 on:
-  # Publica uma Release (com auto-update) ao empurrar uma tag de versão, ex: v0.1.1
+  # Publica uma Release automaticamente quando a versão (package.json) muda na main.
   push:
-    tags:
-      - "v*"
-  # Permite build manual (só gera artifact, sem publicar Release)
+    branches: [main]
+  # Build manual: gera só o instalador como artifact (sem Release).
   workflow_dispatch: {}
 
-# Necessário para o tauri-action criar a GitHub Release
 permissions:
   contents: write
 
 jobs:
+  # Descobre a versão e decide se deve publicar (evita rebuild quando a versão não mudou).
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"      # build manual: só artifact
+          elif gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release=skip" >> "$GITHUB_OUTPUT"        # versão já publicada: não builda
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"        # versão nova: builda e publica
+          fi
+
   build-windows:
+    needs: check
+    if: needs.check.outputs.release != 'skip'
     runs-on: windows-latest
 
     steps:
@@ -40,6 +63,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Cache do Rust no escopo da main → reaproveitado em toda release seguinte.
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
         with:
@@ -52,28 +76,27 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      # Publica a Release com instaladores + latest.json ASSINADO (para o auto-update).
-      # Só roda quando o gatilho é uma tag (push de tag). Em workflow_dispatch é pulado.
+      # Versão nova → builda assinado, cria a Release + latest.json (auto-update).
       - name: Build & Release (Tauri)
-        if: startsWith(github.ref, 'refs/tags/')
+        if: needs.check.outputs.release == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Ricardo Pneus ${{ github.ref_name }}"
+          tagName: v${{ needs.check.outputs.version }}
+          releaseName: "Ricardo Pneus v${{ needs.check.outputs.version }}"
           releaseDraft: false
           prerelease: false
 
-      # Build manual (workflow_dispatch): apenas gera o instalador como artifact.
+      # Build manual (workflow_dispatch): apenas o instalador como artifact.
       - name: Build Tauri (manual, sem release)
-        if: github.event_name == 'workflow_dispatch'
+        if: needs.check.outputs.release == 'false'
         run: pnpm tauri build
 
       - name: Upload installer (manual)
-        if: github.event_name == 'workflow_dispatch'
+        if: needs.check.outputs.release == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: ricardo-pneus-windows-installer
